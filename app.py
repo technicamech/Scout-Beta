@@ -24,6 +24,20 @@ st.set_page_config(
 if "ui_theme" not in st.session_state:
     st.session_state.ui_theme = "Dark"
 
+
+def get_valid_beta_access_codes():
+    raw_codes = os.getenv("SCOUT_BETA_ACCESS_CODES", "")
+    if raw_codes.strip():
+        parts = re.split(r"[,;\n\r]+", raw_codes)
+        return [code.strip() for code in parts if code.strip()]
+    return [
+        "SCOUT-011-A",
+        "SCOUT-011-B",
+        "SCOUT-011-C",
+        "SCOUT-011-D",
+        "SCOUT-011-E",
+    ]
+
 # ---------------------------------
 # Technica-style UI
 # ---------------------------------
@@ -321,6 +335,44 @@ def build_custom_css(theme: str):
 CUSTOM_CSS = build_custom_css(st.session_state.ui_theme)
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
+if "beta_access_granted" not in st.session_state:
+    st.session_state.beta_access_granted = False
+
+if "beta_access_code_used" not in st.session_state:
+    st.session_state.beta_access_code_used = ""
+
+valid_beta_access_codes = get_valid_beta_access_codes()
+
+if not st.session_state.beta_access_granted:
+    st.markdown('<div class="section-card">', unsafe_allow_html=True)
+    st.markdown('<div class="section-kicker">Private Beta Access</div>', unsafe_allow_html=True)
+    st.markdown("## Enter Beta Access Code")
+    st.write("Scout is currently limited to approved beta testers. Enter your assigned access code to continue.")
+    entered_access_code = st.text_input(
+        "Beta Access Code",
+        type="password",
+        placeholder="SCOUT-011-A",
+        key="beta_access_code_input",
+    ).strip()
+
+    unlock_col, info_col = st.columns([1, 2])
+    with unlock_col:
+        unlock_clicked = st.button("Unlock Scout", type="primary")
+    with info_col:
+        st.caption("Each tester can be issued a unique code. Codes can also be managed with the SCOUT_BETA_ACCESS_CODES secret in Streamlit.")
+
+    if unlock_clicked:
+        if entered_access_code in valid_beta_access_codes:
+            st.session_state.beta_access_granted = True
+            st.session_state.beta_access_code_used = entered_access_code
+            st.success("Access granted.")
+            st.rerun()
+        else:
+            st.error("Invalid beta access code.")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.stop()
+
 # ---------------------------------
 # Branded hero
 # ---------------------------------
@@ -421,6 +473,12 @@ with st.sidebar:
             else "No"
         )
     )
+
+    st.write("Beta Access Code: " + (st.session_state.beta_access_code_used or "Granted"))
+    if st.button("Lock Scout"):
+        st.session_state.beta_access_granted = False
+        st.session_state.beta_access_code_used = ""
+        st.rerun()
 
 # ---------------------------------
 # Helpers
