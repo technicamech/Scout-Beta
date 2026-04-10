@@ -13,6 +13,8 @@ import streamlit as st
 
 REQUESTS_SESSION = requests.Session()
 
+st.set_option("client.toolbarMode", "minimal")
+
 st.set_page_config(
     page_title="Scout",
     page_icon="🔧",
