@@ -27,16 +27,10 @@ if "ui_theme" not in st.session_state:
 
 def get_valid_beta_access_codes():
     raw_codes = os.getenv("SCOUT_BETA_ACCESS_CODES", "")
-    if raw_codes.strip():
-        parts = re.split(r"[,;\n\r]+", raw_codes)
-        return [code.strip() for code in parts if code.strip()]
-    return [
-        "SCOUT-011-A",
-        "SCOUT-011-B",
-        "SCOUT-011-C",
-        "SCOUT-011-D",
-        "SCOUT-011-E",
-    ]
+    if not raw_codes.strip():
+        return []
+    parts = re.split(r"[,;\\n\\r]+", raw_codes)
+    return [code.strip() for code in parts if code.strip()]
 
 # ---------------------------------
 # Technica-style UI
@@ -347,11 +341,22 @@ if not st.session_state.beta_access_granted:
     st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.markdown('<div class="section-kicker">Private Beta Access</div>', unsafe_allow_html=True)
     st.markdown("## Enter Beta Access Code")
+
+    if not valid_beta_access_codes:
+        st.error(
+            "Scout beta access codes are not configured. Add SCOUT_BETA_ACCESS_CODES in Streamlit Secrets before sharing this app."
+        )
+        st.caption(
+            'Example secret: SCOUT_BETA_ACCESS_CODES = "SCOUT-011-A,SCOUT-011-B,SCOUT-011-C"'
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+        st.stop()
+
     st.write("Scout is currently limited to approved beta testers. Enter your assigned access code to continue.")
     entered_access_code = st.text_input(
         "Beta Access Code",
         type="password",
-        placeholder="SCOUT-011-A",
+        placeholder="Enter your assigned code",
         key="beta_access_code_input",
     ).strip()
 
@@ -359,7 +364,7 @@ if not st.session_state.beta_access_granted:
     with unlock_col:
         unlock_clicked = st.button("Unlock Scout", type="primary")
     with info_col:
-        st.caption("Each tester can be issued a unique code. Codes can also be managed with the SCOUT_BETA_ACCESS_CODES secret in Streamlit.")
+        st.caption("Access is controlled by the SCOUT_BETA_ACCESS_CODES secret in Streamlit.")
 
     if unlock_clicked:
         if entered_access_code in valid_beta_access_codes:
@@ -457,7 +462,7 @@ if "show_service_preview" not in st.session_state:
 with st.sidebar:
     st.markdown("### Scout System Status")
     st.radio("Theme", ["Dark", "Light"], key="ui_theme", horizontal=True)
-    st.write("Build: V0.11 Beta")
+    st.write("Build: V0.11.7 Beta")
     st.write("Mode: Diagnostic Planning Assistant")
     dataset_root = os.getenv("SCOUT_LOCAL_DATASET_DIR", str(Path("scout_database").resolve()))
     st.write("Local Dataset: " + ("Configured" if os.path.exists(dataset_root) else "Not found"))
@@ -925,19 +930,23 @@ def scan_local_service_dataset(year: str, make: str, model: str, engine: str, co
         "vehicle_folder": str(vehicle_folder.relative_to(root)) if vehicle_folder.exists() else "",
     }
 
-def build_charm_links(year: str, make: str, model: str, engine: str):
-    base_terms = " ".join([x for x in [year, make, model, engine] if x]).strip()
-    if not base_terms:
+def build_reference_guidance(year: str, make: str, model: str, engine: str):
+    vehicle_label = " ".join([x for x in [year, make, model, engine] if x]).strip()
+    if not vehicle_label:
         return {}
-    site_query = urllib.parse.quote(f'site:charm.li {base_terms}')
-    exploded_query = urllib.parse.quote(f'site:charm.li {base_terms} exploded view OR removal OR installation')
-    wiring_query = urllib.parse.quote(f'site:charm.li {base_terms} wiring diagram')
-    specs_query = urllib.parse.quote(f'site:charm.li {base_terms} specifications torque')
+
     return {
-        "search": f"https://www.google.com/search?q={site_query}",
-        "exploded": f"https://www.google.com/search?q={exploded_query}",
-        "wiring": f"https://www.google.com/search?q={wiring_query}",
-        "specs": f"https://www.google.com/search?q={specs_query}",
+        "vehicle_label": vehicle_label,
+        "note": (
+            "External service-manual links are intentionally disabled in beta. "
+            "Use the local dataset matches below or open your trusted service information source directly."
+        ),
+        "recommended_sources": [
+            "OEM service information / workshop manual",
+            "Trusted wiring diagrams",
+            "Torque specifications / service specifications",
+            "Removal and installation procedures",
+        ],
     }
 
 def summarize_service_references_for_prompt(service_refs: dict):
@@ -946,7 +955,7 @@ def summarize_service_references_for_prompt(service_refs: dict):
 
     lines = []
     local_dataset = service_refs.get("local_dataset", {})
-    charm_links = service_refs.get("charm_links", {})
+    reference_guidance = service_refs.get("reference_guidance", {})
 
     if local_dataset.get("exists"):
         lines.append(f"Local dataset root: {local_dataset.get('root', '')}")
@@ -962,8 +971,8 @@ def summarize_service_references_for_prompt(service_refs: dict):
     else:
         lines.append("Local dataset root was not found.")
 
-    if charm_links:
-        lines.append("Charm / web reference links were prepared for procedures, exploded views, wiring, and specs.")
+    if reference_guidance:
+        lines.append(reference_guidance.get("note", ""))
 
     return "\n".join(lines)
 
@@ -978,7 +987,7 @@ def render_service_reference_panel(service_refs: dict):
         return
 
     local_dataset = service_refs.get("local_dataset", {})
-    charm_links = service_refs.get("charm_links", {})
+    reference_guidance = service_refs.get("reference_guidance", {})
 
     left, right = st.columns([1.2, 1])
 
@@ -999,14 +1008,13 @@ def render_service_reference_panel(service_refs: dict):
             st.caption("Create a folder named `scout_database` beside the app, or set SCOUT_LOCAL_DATASET_DIR to your manual library.")
 
     with right:
-        st.markdown("**External reference links**")
-        if charm_links:
-            st.markdown(f"[Charm / manual search]({charm_links['search']})")
-            st.markdown(f"[Exploded views / removal]({charm_links['exploded']})")
-            st.markdown(f"[Wiring diagrams]({charm_links['wiring']})")
-            st.markdown(f"[Specs / torque search]({charm_links['specs']})")
+        st.markdown("**Reference guidance**")
+        if reference_guidance:
+            st.write(reference_guidance.get("note", ""))
+            for source in reference_guidance.get("recommended_sources", []):
+                st.markdown(f"- {source}")
         else:
-            st.write("Vehicle details are not complete enough to build reference links yet.")
+            st.write("Vehicle details are not complete enough to suggest reference types yet.")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1621,7 +1629,7 @@ if preview_ready and st.session_state.show_service_preview:
             complaint.strip(),
             codes.strip(),
         ),
-        "charm_links": build_charm_links(
+        "reference_guidance": build_reference_guidance(
             resolved_year_preview,
             resolved_make_preview,
             resolved_model_preview,
@@ -1695,7 +1703,7 @@ if st.button("Generate Diagnostic Path", type="primary"):
                         input_data["complaint"],
                         input_data["codes"],
                     ),
-                    "charm_links": build_charm_links(
+                    "reference_guidance": build_reference_guidance(
                         input_data["year"],
                         input_data["make"],
                         input_data["model"],
